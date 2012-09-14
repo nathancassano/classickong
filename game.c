@@ -1,10 +1,9 @@
 /*
-
 Copyright 2012 Bubble Zap Games
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
-You may obtain a copy of the License at 
+You may obtain a copy of the License at
 
 http://www.apache.org/licenses/LICENSE-2.0
 
@@ -13,17 +12,16 @@ distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
-
 */
 
 //#define SOUND_DISABLE	//sound loading is rather slow, it could be disabled to make tests faster
+
+const char versionStr[]="V2.0";
 
 #include "sneslib.h"
 
 #define FP	4
 #define POS(x,y) (((y)<<5)+(x))
-
-const char versionStr[]="V1.0";
 
 #include "data.h"
 
@@ -34,7 +32,6 @@ static unsigned int game_frame_cnt;
 static unsigned int game_bg_anim;
 
 static unsigned char game_level;
-static unsigned char game_level_display;
 static unsigned char game_lives;
 static unsigned char game_rivets;
 static unsigned long game_score;
@@ -43,18 +40,31 @@ static unsigned char game_loops;
 static unsigned int  game_bonus;
 static unsigned char game_score_change;
 static unsigned char game_bonus_change;
+static unsigned char game_bonus_cnt;
 static unsigned char game_level_difficulty;
 static unsigned int  game_level_difficulty_count;
-static unsigned char game_barrel_jump;
+static unsigned char game_object_jump;
 static unsigned char game_bounce_delay;
 static unsigned char game_bounce_speed;
 static unsigned char game_fireballs;
+static unsigned char game_fireballs_max;
 static unsigned char game_test_mode;
+static unsigned char game_hard_mode;
+static unsigned char game_update_palette;
+static unsigned char game_flip;
+static unsigned char game_lives_update;
+static unsigned char game_belts_update;
+static unsigned char game_rivets_update;
 
 static unsigned char barrel_fire;
 static unsigned char barrel_fire_x;
 static unsigned char barrel_fire_y;
 static unsigned int  barrel_fire_off;
+
+static unsigned char conveyor_dir[3];
+static unsigned char conveyor_cnt[3];
+static unsigned char conveyor_items[3];
+static unsigned int  conveyor_cnt_middle;
 
 static unsigned int nametable1[32*32];
 static unsigned int nametable2[32*32];
@@ -62,6 +72,9 @@ static unsigned int nametable3[32*32];//offset data
 
 static unsigned char map[32*32];
 static unsigned char walkmap[32*224];
+
+static unsigned int back_buffer[24576/2];
+static unsigned int back_graphics[384*8];
 
 static unsigned int snes_palette_to[256];
 
@@ -200,6 +213,7 @@ const unsigned char tileAttribute[128][8]={
 #define OAM_BARRELS		(OAM_ELEVATORS+(ELEVATORS_MAX<<2))	//5 sprites
 #define OAM_KONG		(OAM_BARRELS+(5<<2))		//5 sprites
 #define OAM_PRINCESS	(OAM_KONG+(5<<2)) 			//3 sprites
+#define OAM_LADDERS		(OAM_PRINCESS+(3<<2))		//2 sprites
 
 #define NAM_OFF(x,y)	((((y)>>3)<<5)+((x)>>3))
 #define WMAP_OFF(x,y)	(((y)<<5)+((x)>>3))
@@ -276,20 +290,26 @@ static unsigned char elevator_bottom;
 
 //enemy variables
 
-#define ENEMY_MAX					10
+#define ENEMY_MAX					16
 
 #define ENEMY_NONE					0
 #define ENEMY_ROLLING_BARREL		1
 #define ENEMY_LADDER_BARREL			2
-#define ENEMY_CRAZY_BARREL			3
-#define ENEMY_FIREBALL_1_JUMP_IN	4
-#define ENEMY_FIREBALL_1			5
-#define ENEMY_FIREBALL_2			6
-#define ENEMY_BOUNCE				7
+#define ENEMY_WILD_BARREL			3	//to refer to all three kinds
+#define ENEMY_WILD_BARREL_DOWN		3
+#define ENEMY_WILD_BARREL_CHANGE	4
+#define ENEMY_WILD_BARREL_SIDE		5
+#define ENEMY_FIREBALL_1_JUMP_IN	6
+#define ENEMY_FIREBALL_1_SPAWN		7
+#define ENEMY_FIREBALL_1			8
+#define ENEMY_FIREBALL_2			9
+#define ENEMY_BOUNCE				10
+#define ENEMY_CEMENT_PAN			11
 
 #define BOUNCE_FP 7
 
 static unsigned char enemy_free;
+static unsigned char enemy_all;
 
 static unsigned char enemy_type [ENEMY_MAX];
 static unsigned char enemy_x    [ENEMY_MAX];
@@ -302,7 +322,6 @@ static unsigned char enemy_land [ENEMY_MAX];
 static int           enemy_ix   [ENEMY_MAX];
 static int           enemy_iy   [ENEMY_MAX];
 static int           enemy_idy  [ENEMY_MAX];
-static unsigned char enemy_crazy[ENEMY_MAX];
 static unsigned char enemy_cnt  [ENEMY_MAX];
 static unsigned char enemy_ladder[ENEMY_MAX];
 static unsigned char enemy_spawn[ENEMY_MAX];
@@ -356,16 +375,17 @@ const int bounce_speed[5*2]={
 
 //particles
 
-#define PARTICLES_MAX	4
+#define PARTICLES_MAX		4
 
-#define PART_TYPE_NONE	0
-#define PART_TYPE_100	1
-#define PART_TYPE_300	2
-#define PART_TYPE_500	3
-#define PART_TYPE_800	4
-#define PART_TYPE_HELP	5
-#define PART_TYPE_SMOKE	6
-#define PART_TYPE_HEART	7
+#define PART_TYPE_NONE		0
+#define PART_TYPE_100		1
+#define PART_TYPE_300		2
+#define PART_TYPE_500		3
+#define PART_TYPE_800		4
+#define PART_TYPE_HELP		5
+#define PART_TYPE_SMOKE		6
+#define PART_TYPE_SMOKE_UP	7
+#define PART_TYPE_HEART		8
 
 static unsigned char particle_free;
 
@@ -381,6 +401,7 @@ static unsigned int  particle_spr [PARTICLES_MAX];
 #define JUMP_NONE	0
 #define JUMP_AIR	1
 #define JUMP_LAND	2
+#define JUMP_DUMMY	3
 
 //movement directions
 
@@ -479,8 +500,8 @@ static unsigned char kong_frame_cnt;
 static unsigned char kong_state;
 static unsigned char kong_delay;
 static const unsigned int* kong_frame;
-static unsigned char kong_throw_crazy_barrel;
-static int           kong_crazy_barrel_type;
+static unsigned char kong_throw_wild_barrel;
+static unsigned char kong_wild_barrel_type;
 static unsigned char kong_start;
 
 
@@ -622,7 +643,23 @@ const unsigned int kongLargeSpriteFell[]={
 128
 };
 
-const unsigned int kongLargeSpriteClimb1[]={
+const unsigned int kongLargeSpriteClimb1L[]={
+ 0, 0,KONG_TILE+0x4a|KONG_ATR|SPR_HFLIP,
+16, 0,KONG_TILE+0x48|KONG_ATR|SPR_HFLIP,
+ 0,16,KONG_TILE+0x6a|KONG_ATR|SPR_HFLIP,
+16,16,KONG_TILE+0x68|KONG_ATR|SPR_HFLIP,
+128
+};
+
+const unsigned int kongLargeSpriteClimb2L[]={
+ 0, 0,KONG_TILE+0x4e|KONG_ATR|SPR_HFLIP,
+16, 0,KONG_TILE+0x4c|KONG_ATR|SPR_HFLIP,
+ 0,16,KONG_TILE+0x6e|KONG_ATR|SPR_HFLIP,
+16,16,KONG_TILE+0x6c|KONG_ATR|SPR_HFLIP,
+128
+};
+
+const unsigned int kongLargeSpriteClimb1R[]={
  0, 0,KONG_TILE+0x48|KONG_ATR,
 16, 0,KONG_TILE+0x4a|KONG_ATR,
  0,16,KONG_TILE+0x68|KONG_ATR,
@@ -630,7 +667,7 @@ const unsigned int kongLargeSpriteClimb1[]={
 128
 };
 
-const unsigned int kongLargeSpriteClimb2[]={
+const unsigned int kongLargeSpriteClimb2R[]={
  0, 0,KONG_TILE+0x4c|KONG_ATR,
 16, 0,KONG_TILE+0x4e|KONG_ATR,
  0,16,KONG_TILE+0x6c|KONG_ATR,
@@ -743,10 +780,14 @@ const unsigned int platformAnim[2*8]={
 
 static unsigned char platformAnimCnt[6*32];
 
+//ladders variables
+
 #define LADDERS_MAX	22
 
-static unsigned char ladders_x[LADDERS_MAX];
-static unsigned char ladders_y[LADDERS_MAX];
+static unsigned char ladders_x    [LADDERS_MAX];
+static unsigned char ladders_y    [LADDERS_MAX];
+static unsigned char ladders_dir  [LADDERS_MAX];
+static unsigned char ladders_cnt  [LADDERS_MAX];
 static unsigned char ladders_delay[LADDERS_MAX];
 
 
@@ -761,7 +802,7 @@ static unsigned char ladders_delay[LADDERS_MAX];
 #define SFX_HERO_JUMP	4
 #define SFX_ITEM		5
 #define SFX_PAUSE		6
-#define SFX_OVER_BARREL	7
+#define SFX_JUMP_OVER	7
 #define SFX_FIRE_SPAWN	8
 #define SFX_RAFT_FALL	9
 #define SFX_KONG_LEFT	10
@@ -770,7 +811,7 @@ static unsigned char ladders_delay[LADDERS_MAX];
 #define SFX_BOUNCE_FALL	13
 #define SFX_BOUNCE_JUMP	14
 #define SFX_KONG_FALLS	15
-#define SFX_KONG_FELL	16
+#define SFX_KONG_LANDS	16
 #define SFX_LOVE		17
 #define SFX_BRIDGE		18
 #define SFX_DESTROY		19
@@ -779,12 +820,16 @@ static unsigned char ladders_delay[LADDERS_MAX];
 #define SFX_LADDER2		22
 #define SFX_BARREL_ROLL	23
 #define SFX_HERO_FALL	24
-#define SFX_HERO_FELL	25
-#define SFX_WINCH_TOUCH	26
+#define SFX_HERO_LANDS	25
+#define SFX_HERO_HIT	26
 #define SFX_KONG_LAUGH	27
 #define SFX_CRACK		28
+#define SFX_SWITCH		29
+#define SFX_BURN		30
+#define SFX_EXTRA_LIFE	31
+#define SFX_HEART		32
 
-#define SOUNDS_ALL		29
+#define SOUNDS_ALL		33
 
 #define MUS_TITLE		0
 #define MUS_GAME_START	1
@@ -826,52 +871,40 @@ const unsigned int* const musicListSize[MUSIC_ALL]={
 
 
 
-//pointers to the background graphics and palettes
-
-const void* const backgroundDataList[][2]={
-{ back1_gfx,back1_pal },
-{ back2_gfx,back2_pal },
-{ back3_gfx,back3_pal },
-{ back4_gfx,back4_pal },
-{ back5_gfx,back5_pal }
-};
-
-
 //empty hdma list, used when the background gradient is disabled
 
 const unsigned char hdmaTableNull[]={ 0 };
 
-//pointers to hdma lists for the background gradients, included in the data.asm
-
-extern const unsigned char hdmaGradient0List0[];
-extern const unsigned char hdmaGradient0List1[];
-extern const unsigned char hdmaGradient0List2[];
-
-extern const unsigned char hdmaGradient1List0[];
-extern const unsigned char hdmaGradient1List1[];
-extern const unsigned char hdmaGradient1List2[];
-
-extern const unsigned char hdmaGradient2List0[];
-extern const unsigned char hdmaGradient2List1[];
-extern const unsigned char hdmaGradient2List2[];
-
-extern const unsigned char hdmaGradient3List0[];
-extern const unsigned char hdmaGradient3List1[];
-extern const unsigned char hdmaGradient3List2[];
-
-extern const unsigned char hdmaGradient4List0[];
-extern const unsigned char hdmaGradient4List1[];
-extern const unsigned char hdmaGradient4List2[];
-
 //pointers to the hdma lists
 
-const unsigned char* const hdmaTables[6][3]={
-{ hdmaTableNull,hdmaTableNull,hdmaTableNull },
-{ hdmaGradient0List0,hdmaGradient0List1,hdmaGradient0List2 },
-{ hdmaGradient2List0,hdmaGradient2List1,hdmaGradient2List2 },
-{ hdmaGradient1List0,hdmaGradient1List1,hdmaGradient1List2 },
-{ hdmaGradient3List0,hdmaGradient3List1,hdmaGradient3List2 },
-{ hdmaGradient4List0,hdmaGradient4List1,hdmaGradient4List2 }
+const unsigned char* const hdmaTables[8][3]={
+{ hdmaTableNull,hdmaTableNull,hdmaTableNull },//no gradient
+{ hdmaGradient0List0,hdmaGradient0List1,hdmaGradient0List2 },//level 1
+{ hdmaGradient5List0,hdmaGradient5List1,hdmaGradient5List2 },//level 2
+{ hdmaGradient2List0,hdmaGradient2List1,hdmaGradient2List2 },//level 3
+{ hdmaGradient1List0,hdmaGradient1List1,hdmaGradient1List2 },//level 4
+{ hdmaGradient3List0,hdmaGradient3List1,hdmaGradient3List2 },//title
+{ hdmaGradient4List0,hdmaGradient4List1,hdmaGradient4List2 },//sound test, levels clear
+{ hdmaGradient6List0,hdmaGradient6List1,hdmaGradient6List2 },//how high can you get
+};
+
+const unsigned char flipTable[256]={
+0x00,0x80,0x40,0xc0,0x20,0xa0,0x60,0xe0,0x10,0x90,0x50,0xd0,0x30,0xb0,0x70,0xf0,
+0x08,0x88,0x48,0xc8,0x28,0xa8,0x68,0xe8,0x18,0x98,0x58,0xd8,0x38,0xb8,0x78,0xf8,
+0x04,0x84,0x44,0xc4,0x24,0xa4,0x64,0xe4,0x14,0x94,0x54,0xd4,0x34,0xb4,0x74,0xf4,
+0x0c,0x8c,0x4c,0xcc,0x2c,0xac,0x6c,0xec,0x1c,0x9c,0x5c,0xdc,0x3c,0xbc,0x7c,0xfc,
+0x02,0x82,0x42,0xc2,0x22,0xa2,0x62,0xe2,0x12,0x92,0x52,0xd2,0x32,0xb2,0x72,0xf2,
+0x0a,0x8a,0x4a,0xca,0x2a,0xaa,0x6a,0xea,0x1a,0x9a,0x5a,0xda,0x3a,0xba,0x7a,0xfa,
+0x06,0x86,0x46,0xc6,0x26,0xa6,0x66,0xe6,0x16,0x96,0x56,0xd6,0x36,0xb6,0x76,0xf6,
+0x0e,0x8e,0x4e,0xce,0x2e,0xae,0x6e,0xee,0x1e,0x9e,0x5e,0xde,0x3e,0xbe,0x7e,0xfe,
+0x01,0x81,0x41,0xc1,0x21,0xa1,0x61,0xe1,0x11,0x91,0x51,0xd1,0x31,0xb1,0x71,0xf1,
+0x09,0x89,0x49,0xc9,0x29,0xa9,0x69,0xe9,0x19,0x99,0x59,0xd9,0x39,0xb9,0x79,0xf9,
+0x05,0x85,0x45,0xc5,0x25,0xa5,0x65,0xe5,0x15,0x95,0x55,0xd5,0x35,0xb5,0x75,0xf5,
+0x0d,0x8d,0x4d,0xcd,0x2d,0xad,0x6d,0xed,0x1d,0x9d,0x5d,0xdd,0x3d,0xbd,0x7d,0xfd,
+0x03,0x83,0x43,0xc3,0x23,0xa3,0x63,0xe3,0x13,0x93,0x53,0xd3,0x33,0xb3,0x73,0xf3,
+0x0b,0x8b,0x4b,0xcb,0x2b,0xab,0x6b,0xeb,0x1b,0x9b,0x5b,0xdb,0x3b,0xbb,0x7b,0xfb,
+0x07,0x87,0x47,0xc7,0x27,0xa7,0x67,0xe7,0x17,0x97,0x57,0xd7,0x37,0xb7,0x77,0xf7,
+0x0f,0x8f,0x4f,0xcf,0x2f,0xaf,0x6f,0xef,0x1f,0x9f,0x5f,0xdf,0x3f,0xbf,0x7f,0xff
 };
 
 
@@ -996,21 +1029,43 @@ void clear_nametables(void)
 
 void update_nametables(void)
 {
-	copy_vram(0x0000,(unsigned char*)nametable1,32*32*2);
-	copy_vram(0x0400,(unsigned char*)nametable2,32*32*2);
-	copy_vram(0x7c00,(unsigned char*)nametable3,32*32*2);
+	copy_to_vram(0x0000,(unsigned char*)nametable1,32*32*2);
+	copy_to_vram(0x0400,(unsigned char*)nametable2,32*32*2);
+	copy_to_vram(0x7c00,(unsigned char*)nametable3,32*32*2);
 }
 
 
 
 //set up a background, it includes uploading graphics into the VRAM,
 //setting up a palette and nametable
+//-1    no background graphics
+// 0    title screen (more processing for the mask)
+// 1..4 levels and other screens
+// 5	how high can you get screen
+
+#define MAKE_MASK(x)	tile=back_buffer[off+0+(x)]|back_buffer[off+8+(x)]; \
+						tile|=(tile>>8)|(tile<<8); \
+						back_graphics[ptr++]=~tile;
+
+#define MAKE_MASK_F(x)	tile=back_buffer[off+0+(x)]|back_buffer[off+8+(x)]; \
+						tile=flipTable[tile&255]|(flipTable[tile>>8]<<8); \
+						tile|=(tile>>8)|(tile<<8); \
+						back_graphics[ptr++]=~tile;
 
 void set_background(char n)
 {
-	static unsigned int off;
+	static unsigned int off,ptr,tile,pp,tiles_all;
+	static unsigned char i,j,x,x_off;
+	static const unsigned int *pal;
 
-	set_palette(16,16,n!=1?tileset1_pal:tileset1alt_pal);
+	switch(n)
+	{
+	case 2:  pal=tileset1alt1_pal; break;
+	case 3:  pal=tileset1alt2_pal; break;
+	default: pal=tileset1_pal;
+	}
+
+	set_palette(16,16,pal);
 
 	if(n<0)
 	{
@@ -1019,18 +1074,133 @@ void set_background(char n)
 		return;
 	}
 
-	copy_vram  (0x4000,backgroundDataList[n][0],24576);
-	set_palette(112,16,backgroundDataList[n][1]);
+	x_off=(n*7)&31;//background image horizontal offset depends from the level
+	tiles_all=(n?80:358);
 
-	for(off=0;off<32*32;++off)
+	//copy previously uploaded front layer graphics from VRAM to RAM buffer
+
+	copy_from_vram(0x1400,(unsigned char*)back_buffer,tiles_all<<5);
+
+	//convert it to mask
+
+	ptr=0;
+
+	if(!game_flip)
 	{
-		nametable2[off]=((off<32*24)?off:32*23)+BG_PAL(7);
+		for(off=0;off<(tiles_all<<4);off+=16)
+		{
+			MAKE_MASK(0);
+			MAKE_MASK(1);
+			MAKE_MASK(2);
+			MAKE_MASK(3);
+			MAKE_MASK(4);
+			MAKE_MASK(5);
+			MAKE_MASK(6);
+			MAKE_MASK(7);
+		}
 	}
+	else
+	{
+		for(off=0;off<(tiles_all<<4);off+=16)
+		{
+			MAKE_MASK_F(0);
+			MAKE_MASK_F(1);
+			MAKE_MASK_F(2);
+			MAKE_MASK_F(3);
+			MAKE_MASK_F(4);
+			MAKE_MASK_F(5);
+			MAKE_MASK_F(6);
+			MAKE_MASK_F(7);
+		}
+	}
+
+	//copy background from ROM to RAM buffer
+
+	copy_mem((unsigned char*)back_buffer,(unsigned char*)back1_gfx,24576);
+
+	//put level graphics mask on the background graphics
+
+	ptr=0;
+	off=0;
+
+	for(i=0;i<24;++i)
+	{
+		x=x_off;
+
+		for(j=0;j<32;++j)
+		{
+			tile=nametable1[off+x]&0x3ff;
+
+			if(tile>0x140)//skip empty and font tiles to save time
+			{
+				pp=(tile-0x140)<<3;
+
+				back_buffer[ptr++]&=back_graphics[pp++];
+				back_buffer[ptr++]&=back_graphics[pp++];
+				back_buffer[ptr++]&=back_graphics[pp++];
+				back_buffer[ptr++]&=back_graphics[pp++];
+				back_buffer[ptr++]&=back_graphics[pp++];
+				back_buffer[ptr++]&=back_graphics[pp++];
+				back_buffer[ptr++]&=back_graphics[pp++];
+				back_buffer[ptr++]&=back_graphics[pp];
+
+				pp&=~7;
+
+				back_buffer[ptr++]&=back_graphics[pp++];
+				back_buffer[ptr++]&=back_graphics[pp++];
+				back_buffer[ptr++]&=back_graphics[pp++];
+				back_buffer[ptr++]&=back_graphics[pp++];
+				back_buffer[ptr++]&=back_graphics[pp++];
+				back_buffer[ptr++]&=back_graphics[pp++];
+				back_buffer[ptr++]&=back_graphics[pp++];
+				back_buffer[ptr++]&=back_graphics[pp];
+			}
+			else
+			{
+				ptr+=16;
+			}
+
+			x=(x+1)&31;
+		}
+
+		off+=32;
+	}
+
+	//copy modified background graphics from RAM buffer to VRAM
+
+	copy_to_vram(0x4000,(unsigned char*)back_buffer,24576);
+	set_palette(112,16,back1_pal);
+
+	off=0;
+
+	for(i=0;i<24;++i)
+	{
+		x=x_off;
+
+		for(j=0;j<32;++j)
+		{
+			nametable2[off+x]=off+j+BG_PAL(7);
+			x=(x+1)&31;
+		}
+
+		off+=32;
+	}
+
+	for(off=32*24;off<32*32;++off) nametable2[off]=32*23+BG_PAL(7);
 }
 
 
 
 //set up a hdma gradient, or disable it
+//-1 disable
+// 0 no gradient
+// 1 level 1
+// 2 level 2
+// 3 level 3
+// 4 level 4
+// 5 title, sound test
+// 6 levels clear
+// 7 how high can you get
 
 void setup_hdma_gradient(char n)
 {
@@ -1053,13 +1223,13 @@ void setup_hdma_gradient(char n)
 
 
 //set up all needed palettes
-//they are fixed for everything but background pictures
+//they are fixed for almost everything but background pictures
 //and the first half of the tileset
 
 void setup_palettes(void)
 {
 	set_palette(0  ,16,font_pal);
-	set_palette(32 ,16,tileset2_pal);
+	set_palette(32 ,16,game_level!=1?tileset2_pal:tileset2alt_pal);
 	set_palette(80 ,16,title_top_pal);
 	set_palette(96 ,16,title_bottom_pal);
 
@@ -1080,12 +1250,12 @@ void setup_ingame_graphics(void)
 {
 	const unsigned int offset=0x2000;
 
-	copy_vram(offset+(PLAYER_TILE  <<4),sprites1_gfx,3072);
-	copy_vram(offset+(ITEMS_TILE   <<4),sprites2_gfx,2048);
-	copy_vram(offset+(KONG_TILE    <<4),sprites3_gfx,5120);
-	copy_vram(offset+(BARREL_TILE  <<4),sprites4_gfx,1024);
-	copy_vram(offset+(ENEMY_TILE   <<4),sprites5_gfx,4096);
-	copy_vram(offset+(PRINCESS_TILE<<4),sprites6_gfx,1024);
+	copy_to_vram(offset+(PLAYER_TILE  <<4),sprites1_gfx,3072);
+	copy_to_vram(offset+(ITEMS_TILE   <<4),sprites2_gfx,2048);
+	copy_to_vram(offset+(KONG_TILE    <<4),sprites3_gfx,5120);
+	copy_to_vram(offset+(BARREL_TILE  <<4),sprites4_gfx,1024);
+	copy_to_vram(offset+(ENEMY_TILE   <<4),sprites5_gfx,4096);
+	copy_to_vram(offset+(PRINCESS_TILE<<4),sprites6_gfx,1024);
 }
 
 
@@ -1169,7 +1339,7 @@ void show_logo(void)
 	BG12NBA(0x70);	/*patterns for layers 1 and 2 at $1000*/
 	BG34NBA(0x00);	/*patterns for layers 3 and 4 at $1000*/
 
-	copy_vram(0x0800,bzlogo_gfx,7168);
+	copy_to_vram(0x0800,bzlogo_gfx,7168);
 	set_palette(0,256,bzlogo_pal);
 
 	for(i=0;i<32*32;++i)
@@ -1286,10 +1456,10 @@ int main(void)
 	init();
 
 	/*since there is not much graphics in the game, part of it is loaded into
-	  the VRAM at once, only background pictures and sprites are reloaded when needed*/
+	  the VRAM at once, only sprites are reloaded when needed*/
 
-	copy_vram(0x1000,font_gfx,2048);
-	copy_vram(0x1400,tileset1_gfx,2048);
+	copy_to_vram(0x1000,font_gfx,2048);
+	copy_to_vram(0x1400,tileset1_gfx,2048);
 
 	/*show PAL warning*/
 
@@ -1297,11 +1467,13 @@ int main(void)
 
 	/*reinitialize*/
 
+	set_scroll(1,-1,-1);
 	setup_hdma_gradient(-1);
 
 	game_score=0;
 	game_best_score=0;
-	game_test_mode=0;
+	game_test_mode=FALSE;
+	game_hard_mode=FALSE;
 
 	/*main loop*/
 
@@ -1313,18 +1485,17 @@ int main(void)
 			continue;
 		}
 
-		/*show intro and the 'how high you can get' cutscene*/
-
-		cutscene_intro();
-		cutscene_level();
-
 		/*setup game variables*/
 
 		game_level=0;
 		game_lives=3;
 		game_score=0;
-		game_loops=0;
-		game_level_display=game_level+1;
+		game_loops=!game_hard_mode?0:15;
+
+		/*show intro and the 'how high you can get' cutscene*/
+
+		cutscene_intro();
+		cutscene_level();
 
 		/*main levels loop*/
 
@@ -1337,11 +1508,10 @@ int main(void)
 				/*level clear, go to the next level*/
 
 				++game_level;
-				++game_level_display;
 
 				/*when all three levels are clear, show the clear cutscene*/
 
-				if(game_level==3)
+				if(game_level==4)
 				{
 					cutscene_levels_clear();
 

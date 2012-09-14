@@ -23,7 +23,7 @@ limitations under the License.
 
 void title_screen_press_start_str(unsigned char show)
 {
-	put_str(&nametable1[POS(10,21)],show?"PRESS START":"           ");
+	put_str(&nametable1[POS(10,22)],show?"PRESS START":"           ");
 }
 
 
@@ -32,7 +32,24 @@ void title_screen_press_start_str(unsigned char show)
 
 void title_screen_update(void)
 {
-	copy_vram(0x0000,(unsigned char*)nametable1,32*32*2);
+	copy_to_vram(0x0000,(unsigned char*)nametable1,32*32*2);
+}
+
+
+
+//fill a rectangle in the nametable
+
+void title_set_rect(unsigned int off,unsigned char wdt,unsigned char hgt,unsigned int tile,unsigned char swdt)
+{
+	static unsigned char i,j;
+	
+	for(i=0;i<hgt;++i)
+	{
+		for(j=0;j<wdt;++j) nametable1[off+j]=tile+j;
+		
+		off+=32;
+		tile+=swdt;
+	}
 }
 
 
@@ -41,50 +58,44 @@ void title_screen_update(void)
 
 unsigned char title_screen(void)
 {
-	static unsigned int i,j,cnt,off,bright,code;
+	static unsigned int i,j,cnt,off,bright,codet,codeh;
 	const char* const soundMode[3]={"           "," MONO MODE ","STEREO MODE"};
 	const unsigned int testCode[]={PAD_B,PAD_A,PAD_R,PAD_R,PAD_A,PAD_L};
+	const unsigned int hardCode[]={PAD_B,PAD_A,PAD_DOWN,PAD_B,PAD_UP,PAD_DOWN,PAD_DOWN,PAD_Y};
 
 	set_bright(0);
 	setup_hdma_gradient(-1);
 	oam_clear();
 
-	copy_vram(0x2000,title_top_gfx   ,2304);
-	copy_vram(0x2480,title_bottom_gfx,7680);
+	copy_to_vram(0x1800,title_top_gfx   ,2400);
+	copy_to_vram(0x1cb0,title_bottom_gfx,7030);
 
 	clear_nametables();
-	set_background(3);
+	
+	title_set_rect(POS( 4, 5),13,3,0x180|BG_PAL(5),25);
+	title_set_rect(POS( 4, 8),24,9,0x1cb|BG_PAL(6),24);
+	title_set_rect(POS(16,17),12,3,0x18d|BG_PAL(5),25);
 
-	put_str(&nametable1[POS(4,2)],"SCORE:000000 BEST:000000");
-	put_str(&nametable1[POS(8,26)],"@2012 BUBBLEZAP");
+	set_background(0);
+
+	put_str(&nametable1[POS( 4, 2)],"SCORE:000000");
+	put_str(&nametable1[POS(17, 2)],"BEST:000000");
+	put_str(&nametable1[POS( 8,26)],"@2012 BUBBLEZAP");
 
 	put_num(&nametable1[POS(10,2)],game_score,5);
 	put_num(&nametable1[POS(22,2)],game_best_score,5);
-
-	cnt=0x0200;
-
-	for(i=0;i<13;++i)
-	{
-		off=POS(4,6+i);
-
-		for(j=0;j<24;++j)
-		{
-			nametable1[off]=cnt|(i<3?BG_PAL(5):BG_PAL(6));
-			++cnt;
-			++off;
-		}
-	}
 
 	update_nametables();
 	setup_palettes();
 	update_palette();
 
-	setup_hdma_gradient(4);
+	setup_hdma_gradient(5);
 
 	bright=0;
 	game_frame_cnt=0;
 	cnt=0;
-	code=0;
+	codet=0;
+	codeh=0;
 
 	music_play(MUS_TITLE);
 
@@ -126,20 +137,36 @@ unsigned char title_screen(void)
 		{
 			//check the test code
 			
-			if(testCode[code]==i)
+			if(testCode[codet]==i)
 			{
-				++code;
+				++codet;
 
-				if(code==6)
+				if(codet==6)
 				{
 					sfx_play(SFX_CHN+2,SFX_LOVE,128);
-					game_test_mode=TRUE;
-					code=0;
+					game_test_mode^=TRUE;
+					codet=0;
 				}
 			}
 			else
 			{
-				code=0;
+				codet=0;
+			}
+			
+			if(hardCode[codeh]==i)
+			{
+				++codeh;
+
+				if(codeh==8)
+				{
+					sfx_play(SFX_CHN+2,SFX_KONG_LAUGH,128);
+					game_hard_mode^=TRUE;
+					codeh=0;
+				}
+			}
+			else
+			{
+				codeh=0;
 			}
 		}
 

@@ -1,10 +1,9 @@
 /*
-
 Copyright 2012 Bubble Zap Games
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
-You may obtain a copy of the License at 
+You may obtain a copy of the License at
 
 http://www.apache.org/licenses/LICENSE-2.0
 
@@ -13,26 +12,30 @@ distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
-
 */
+
+//clear a particle and hide its sprite
+
+void particle_clear(unsigned char id)
+{
+	particle_type[id]=PART_TYPE_NONE;
+
+	oam_spr1(0,240,0,OAM_PARTICLES+(id<<2));
+
+	particle_free=id;
+}
+
+
 
 //clear particles list and hide their sprites
 
 void particles_clear(void)
 {
-	static unsigned char i,spr;
+	static unsigned char i;
 
 	memset(particle_type,PART_TYPE_NONE,PARTICLES_MAX);
 
-	particle_free=0;
-
-	spr=OAM_PARTICLES;
-
-	for(i=0;i<PARTICLES_MAX;++i)
-	{
-		oam_spr1(0,240,0,spr);
-		spr+=4;
-	}
+	for(i=0;i<PARTICLES_MAX;++i) particle_clear(i);
 }
 
 
@@ -45,7 +48,7 @@ void particle_add(unsigned char type,unsigned char x,unsigned char y)
 	static unsigned int spr;
 
 	i=particle_free;
-	
+
 	cnt1=0;
 	cnt2=0;
 
@@ -89,6 +92,7 @@ void particle_add(unsigned char type,unsigned char x,unsigned char y)
 			break;
 
 		case PART_TYPE_SMOKE:
+		case PART_TYPE_SMOKE_UP:
 			cnt1=32;
 			spr=ENEMY_TILE+0x40|ENEMY_ATR;
 			break;
@@ -102,7 +106,7 @@ void particle_add(unsigned char type,unsigned char x,unsigned char y)
 
 		particle_cnt1[i]=cnt1;
 		particle_cnt2[i]=cnt2;
-		particle_spr[i]=spr;
+		particle_spr [i]=spr;
 
 		break;
 	}
@@ -118,102 +122,98 @@ void particle_add(unsigned char type,unsigned char x,unsigned char y)
 
 void particle_process(void)
 {
-	static unsigned char i,j,x,y,cnt1,cnt2,spr;
+	static unsigned char i,j,spr;
 
 	spr=OAM_PARTICLES;
 	j=game_frame_cnt;
 
 	for(i=0;i<PARTICLES_MAX;++i)
 	{
-		if(particle_type[i]==PART_TYPE_NONE)
-		{
-			oam_spr1(0,240,0,spr);
-			spr+=4;
-
-			continue;
-		}
-
-		x   =particle_x   [i];
-		y   =particle_y   [i];
-		cnt1=particle_cnt1[i];
-		cnt2=particle_cnt2[i];
-
 		switch(particle_type[i])
 		{
+		case PART_TYPE_NONE:
+			spr+=4;
+			continue;
+
 		case PART_TYPE_100:
 		case PART_TYPE_300:
 		case PART_TYPE_500:
 		case PART_TYPE_800:
 			{
-				--cnt1;
+				oam_spr1(particle_x[i],particle_y[i],particle_spr[i],spr);
 
-				if(!cnt1)
+				--particle_cnt1[i];
+
+				if(!particle_cnt1[i])
 				{
-					particle_type[i]=PART_TYPE_NONE;
+					particle_clear(i);
 				}
 				else
 				{
-					if(j&1) --y;
+					if(j&1) --particle_y[i];
 				}
 			}
 			break;
 
 		case PART_TYPE_HELP:
 			{
-				--cnt1;
+				oam_spr1(particle_x[i],particle_y[i],particle_spr[i],spr);
 
-				if(!cnt1)
+				--particle_cnt1[i];
+
+				if(!particle_cnt1[i])
 				{
-					particle_type[i]=PART_TYPE_NONE;
+					particle_clear(i);
 				}
 				else
 				{
-					if(!(j&3)) --y;
+					if(!(j&3)) --particle_y[i];
 				}
 			}
 			break;
 
+		case PART_TYPE_SMOKE_UP:
+			{
+				--particle_y[i];
+			}
 		case PART_TYPE_SMOKE:
 			{
-				--cnt1;
+				oam_spr1(particle_x[i],particle_y[i],particle_spr[i],spr);
 
-				if(!cnt1)
+				--particle_cnt1[i];
+
+				if(!particle_cnt1[i])
 				{
-					particle_type[i]=PART_TYPE_NONE;
+					particle_clear(i);
 				}
 				else
 				{
-					if(!(cnt1&3)) particle_spr[i]+=2;
+					if(!(particle_cnt1[i]&3)) particle_spr[i]+=2;
 				}
 			}
 			break;
 
 		case PART_TYPE_HEART:
 			{
-				if(!(cnt2&3)&&j&1) --y;
+				oam_spr1(particle_x[i],particle_y[i],particle_spr[i],spr);
 
-				if(!cnt2)
+				if(!(particle_cnt2[i]&3)&&(j&1)) --particle_y[i];
+
+				if(!particle_cnt2[i])
 				{
-					if(cnt1&16) --x; else ++x;
+					if(particle_cnt1[i]&16) --particle_x[i]; else ++particle_x[i];
 				}
 
-				++cnt1;
-				
-				if(cnt2) cnt2-=2;
-				
-				particle_spr[i]=PRINCESS_TILE+0x0c+(cnt2&2)|PRINCESS_ATR;
+				++particle_cnt1[i];
 
-				if(y==240) particle_type[i]=PART_TYPE_NONE;
+				if(particle_cnt2[i]) particle_cnt2[i]-=2;
+
+				particle_spr[i]=PRINCESS_TILE+0x0c+(particle_cnt2[i]&2)|PRINCESS_ATR;
+
+				if(particle_y[i]==240) particle_clear(i);
 			}
 			break;
 		}
-
-		oam_spr1(x,y,particle_spr[i],spr);
-
-		particle_x   [i]=x;
-		particle_y   [i]=y;
-		particle_cnt1[i]=cnt1;
-		particle_cnt2[i]=cnt2;
 
 		spr+=4;
 		++j;

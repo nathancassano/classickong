@@ -1,5 +1,6 @@
 del gfx\*.chr
 del gfx\*.pal
+del sound\*.bin
 del spc700.bin
 del *.ps1
 del *.s

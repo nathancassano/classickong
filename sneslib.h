@@ -40,6 +40,10 @@ extern void* __nmi_handler;
 #define COLDATA(x)			*((unsigned char*)0x2132)=(x);
 #define STAT78()			*((unsigned char*)0x213f)
 
+#define WRAM_ADDR(x)		*((unsigned char*)0x2181)= (x)     &0xff; \
+							*((unsigned char*)0x2182)=((x)>>8 )&0xff; \
+							*((unsigned char*)0x2183)=((x)>>16)&0xff;
+
 #define NMITIMEEN(x)		*((unsigned char*)0x4200)=(x);
 #define MEMSEL(x)			*((unsigned char*)0x420d)=(x);
 #define HVBJOY()			*((unsigned char*)0x4212)
@@ -137,7 +141,7 @@ void nmi_handler(void)
 	DMA_ADDR(7,snes_oam);
 	DMA_SIZE(7,0x0220);
 	MDMAEN(1<<7);
-	
+
 	++snes_frame_cnt;
 }
 
@@ -148,7 +152,7 @@ void nmi_handler(void)
 void nmi_wait(void)
 {
 	static unsigned int i;
-	
+
 	i=snes_frame_cnt;
 
 	while(i==snes_frame_cnt);
@@ -245,12 +249,30 @@ void update_palette(void)
 
 
 
-//copy data from RAM to the VRAM through DMA
+//copy data from RAM or ROM to the VRAM through DMA
 
-void copy_vram(unsigned int adr,const unsigned char *src,unsigned int size)
+void copy_to_vram(unsigned int adr,const unsigned char *src,unsigned int size)
 {
 	VRAM_ADDR(adr);
 	DMA_TYPE(7,0x1801);
+	DMA_ADDR(7,(unsigned char*)src);
+	DMA_SIZE(7,size);
+	MDMAEN(1<<7);
+}
+
+
+
+//copy data from VRAM to RAM or ROM through DMA
+
+void copy_from_vram(unsigned int adr,const unsigned char *src,unsigned int size)
+{
+	volatile unsigned short dummy;
+
+	VRAM_ADDR(adr);
+
+	dummy=*(unsigned short*)0x2139;
+
+	DMA_TYPE(7,0x3981);
 	DMA_ADDR(7,(unsigned char*)src);
 	DMA_SIZE(7,size);
 	MDMAEN(1<<7);
@@ -265,6 +287,19 @@ void fill_vram(unsigned int adr,const unsigned char value,unsigned int size)
 	VRAM_ADDR(adr);
 	DMA_TYPE(7,0x1809);
 	DMA_ADDR(7,&value);
+	DMA_SIZE(7,size);
+	MDMAEN(1<<7);
+}
+
+
+
+//copy data from ROM to RAM or vice versa through DMA (RAM-RAM copy is not possible)
+
+void copy_mem(unsigned char *dst,unsigned char *src,unsigned int size)
+{
+	WRAM_ADDR(((unsigned long)dst));
+	DMA_TYPE(7,0x8000);
+	DMA_ADDR(7,(unsigned char*)src);
 	DMA_SIZE(7,size);
 	MDMAEN(1<<7);
 }
@@ -293,21 +328,21 @@ void set_scroll(unsigned int layer,unsigned int x,unsigned int y)
 		BG1VOFFS(y&255);
 		BG1VOFFS(y>>8);
 		break;
-		
+
 	case 1:
 		BG2HOFFS(x&255);
 		BG2HOFFS(x>>8);
 		BG2VOFFS(y&255);
 		BG2VOFFS(y>>8);
 		break;
-		
+
 	case 2:
 		BG3HOFFS(x&255);
 		BG3HOFFS(x>>8);
 		BG3VOFFS(y&255);
 		BG3VOFFS(y>>8);
 		break;
-		
+
 	case 3:
 		BG4HOFFS(x&255);
 		BG4HOFFS(x>>8);
@@ -365,7 +400,7 @@ void oam_spr(unsigned int x,unsigned int y,unsigned int chr,unsigned int off)
 
 //set a sprite in the OAM buffer
 //this function only sets LSB of X, but works much faster
-
+/*
 void oam_spr1(unsigned int x,unsigned int y,unsigned int chr,unsigned int off)
 {
 	snes_oam[off+0]=x;
@@ -373,8 +408,14 @@ void oam_spr1(unsigned int x,unsigned int y,unsigned int chr,unsigned int off)
 	snes_oam[off+2]=chr;
 	snes_oam[off+3]=chr>>8;
 }
+*/
+#define oam_spr1(x,y,chr,off) snes_oam[(off)+0]=(x); \
+							  snes_oam[(off)+1]=(y); \
+							  snes_oam[(off)+2]=(chr); \
+							  snes_oam[(off)+3]=(chr)>>8;
 
 
+//set size bits of a sprite in the OAM buffer
 
 //set size bits of a sprite in the OAM buffer
 
@@ -405,7 +446,7 @@ void oam_clear(void)
 {
 	static unsigned int i;
 
-	for(i=0;i<128<<2;i+=4)
+	for(i=0;i<512;i+=4)
 	{
 		oam_spr(0,240,0,i);
 		oam_size(i,0);
@@ -443,8 +484,8 @@ void init(void)
 	BG1SC(0<<2);	//32x32 nametable at $0000
 	BG2SC(1<<2);	//32x32 nametable at $0400
 	BG3SC(31<<2);	//offsets table $7c00
-	BG12NBA(0x40);	//patterns for layers 1 and 2 at $4000
-	BG34NBA(0x44);	//patterns for layers 3 and 4 at $0000
+	BG12NBA(0x40);	//patterns for layers 1 at $0000, 2 at $4000
+	BG34NBA(0x44);	//patterns for layers 3 and 4 at $4000
 	TM(0x13);		//enable sprites and background
 	OBSEL(1);		//sprite sizes 8x8 and 16x16, graphics at $2000
 	MEMSEL(1);		//FastROM enable
@@ -460,7 +501,7 @@ void init(void)
 		snes_joypad_state_prev[i]=0;
 		snes_joypad_state_trigger[i]=0;
 	}
-	
+
 	set_bright(0);
 	oam_clear();
 

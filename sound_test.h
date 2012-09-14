@@ -1,10 +1,9 @@
 /*
-
 Copyright 2012 Bubble Zap Games
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
-You may obtain a copy of the License at 
+You may obtain a copy of the License at
 
 http://www.apache.org/licenses/LICENSE-2.0
 
@@ -13,10 +12,11 @@ distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
-
 */
 
+
 //sound test code
+
 void sound_test(void)
 {
 	static unsigned int i,j,num,screen_bright,off,bright;
@@ -28,11 +28,12 @@ void sound_test(void)
 	oam_clear();
 
 	clear_nametables();
-	set_background(4);
-
+	
 	unrle(map,mape);
 
 	for(i=0;i<32*32;++i) nametable1[i]=map[i]+0x0140|BG_PAL(1)|BG_PRI;
+
+	set_background(1);
 
 	put_str(&nametable1[POS(11,8)],"SOUND TEST");
 
@@ -80,7 +81,7 @@ void sound_test(void)
 
 		nmi_wait();
 
-		copy_vram(POS(0,10),(const unsigned char*)&nametable1[POS(0,10)],512);
+		copy_to_vram(POS(0,10),(const unsigned char*)&nametable1[POS(0,10)],512);
 
 		if(bright<15)
 		{

@@ -23,10 +23,10 @@ dir:
 	{sample sample21,0}
 	{sample sample22,0}
 	{sample sample23,0}
-	{sample 0,0}
-	{sample 0,0}
-	{sample 0,0}
-	{sample 0,0}
+	{sample sample24,0}
+	{sample sample25,0}
+	{sample sample26,0}
+	{sample sample27,0}
 	{sample 0,0}
 	{sample 0,0}
 	{sample 0,0}
@@ -89,8 +89,8 @@ adsr:
 	{adsr 15,7,7,26}
 	{adsr 15,7,7,0}
 	{adsr 15,7,7,0}
-	{adsr 15,7,7,0}
-	{adsr 15,7,7,0}
+	{adsr 14,7,7,0}
+	{adsr 14,6,1,19}
 	{adsr 15,7,7,0}
 	{adsr 15,7,7,0}
 	{adsr 15,7,7,0}
@@ -225,3 +225,11 @@ sample22:
 	incbin "sample22.brr"
 sample23:
 	incbin "sample23.brr"
+sample24:
+	incbin "sample24.brr"
+sample25:
+	incbin "sample25.brr"
+sample26:
+	incbin "sample26.brr"
+sample27:
+	incbin "sample27.brr"

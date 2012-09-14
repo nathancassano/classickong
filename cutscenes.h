@@ -1,10 +1,9 @@
 /*
-
 Copyright 2012 Bubble Zap Games
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
-You may obtain a copy of the License at 
+You may obtain a copy of the License at
 
 http://www.apache.org/licenses/LICENSE-2.0
 
@@ -13,7 +12,6 @@ distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
-
 */
 
 //set kong floor hitting animation frame
@@ -39,10 +37,12 @@ void kong_stand_animation_both(void)
 void cutscene_levels_clear(void)
 {
 	static unsigned int ptr,frame,spr;
-	static unsigned char i,j,x,bright,fall_start,fall_ground,princess_frame,bounce_cnt;
+	static unsigned char i,j,x,bright,fall_start,fall_ground,princess_frame,bounce_cnt,shake_cnt;
 	static unsigned char platform_y[4];
 	static unsigned char platform_hit[4];
 	static int ky,kdy;
+
+	game_flip=0;
 
 	set_bright(0);
 	setup_hdma_gradient(-1);
@@ -50,12 +50,12 @@ void cutscene_levels_clear(void)
 
 	setup_ingame_graphics();
 	clear_nametables();
-	set_background(4);
 
 	unrle(map,mape);
 
 	for(ptr=0;ptr<32*32;++ptr) nametable1[ptr]=map[ptr]+0x0140|BG_PAL(1)|BG_PRI;
 
+	set_background(1);
 	update_nametables();
 	setup_palettes();
 	update_palette();
@@ -85,7 +85,7 @@ void cutscene_levels_clear(void)
 	particles_clear();
 	kong_stand_animation_both();
 
-	setup_hdma_gradient(5);
+	setup_hdma_gradient(6);
 
 	for(i=0;i<128;++i) oam_size(i<<2,1);//set all sprites to 16x16 size
 
@@ -95,11 +95,35 @@ void cutscene_levels_clear(void)
 	fall_start=FALSE;
 	fall_ground=FALSE;
 	bounce_cnt=0;
+	shake_cnt=0;
 
 	for(frame=0;frame<14*60;++frame)
 	{
 		nmi_wait();
-		copy_vram(POS(8,7),(unsigned char*)&nametable1[POS(8,7)],16*2);//update the bridge area of the nametable
+		copy_to_vram(POS(8,7),(unsigned char*)&nametable1[POS(8,7)],16*2);//update the bridge area of the nametable
+
+		/*shake screen when kong hits the ground*/
+		
+		if(shake_cnt)
+		{
+			--shake_cnt;
+			
+			if(shake_cnt&2)
+			{
+				set_scroll(0,-1,-1);
+				set_scroll(1,-2,-2);
+			}
+			else
+			{
+				set_scroll(0, 1, 1);
+				set_scroll(1, 0, 0);
+			}
+		}
+		else
+		{
+			set_scroll(0, 0, 0);
+			set_scroll(1,-1,-1);
+		}
 
 		if(bright<15)
 		{
@@ -110,13 +134,13 @@ void cutscene_levels_clear(void)
 		if(frame<6*4*6)
 		{
 			/*kong is just stands hitting the floor for few first frames*/
-			
+
 			kong_stand_animation_both();
 		}
 		else
 		{
 			/*then platforms and kong falling sequence starts*/
-			
+
 			if(platform_y[0]>=200)
 			{
 				if(bounce_cnt<5)
@@ -144,7 +168,9 @@ void cutscene_levels_clear(void)
 							fall_ground=TRUE;
 							kong_frame=kongLargeSpriteFell;
 
-							sfx_play(SFX_CHN+2,SFX_KONG_FELL,128);
+							sfx_play(SFX_CHN+2,SFX_KONG_LANDS,128);
+							
+							shake_cnt=25;
 						}
 					}
 
@@ -157,7 +183,7 @@ void cutscene_levels_clear(void)
 			}
 
 			//move platforms down
-			
+
 			for(i=0;i<4;++i)
 			{
 				if(platform_y[i]<200)//if it didn't hit the floor yet
@@ -185,7 +211,7 @@ void cutscene_levels_clear(void)
 		}
 
 		//update all sprites
-		
+
 		kong_y=ky>>6;
 
 		game_show_kong(OAM_KONG,kong_x,kong_y);
@@ -210,11 +236,11 @@ void cutscene_levels_clear(void)
 		particle_process();
 
 		/*when kong is on the ground, start victory music*/
-		
+
 		if(frame==350) music_play(MUS_VICTORY);
 
 		/*put the bridge into the nametable piece by piece*/
-		
+
 		if(frame>420&&!(frame&3))
 		{
 			if(ptr>0xe7)
@@ -226,7 +252,7 @@ void cutscene_levels_clear(void)
 		princess_frame=game_frame_cnt&32?2:0;
 
 		/*when the bridge is fully appeared, mario and princess start slowly walking to each other*/
-		
+
 		if(frame>400+80)
 		{
 			i=frame%3;
@@ -245,7 +271,7 @@ void cutscene_levels_clear(void)
 		}
 
 		/*when they come closer, a heart appears*/
-		
+
 		if(frame==670)
 		{
 			particle_add(PART_TYPE_HEART,120,32);
@@ -253,7 +279,7 @@ void cutscene_levels_clear(void)
 		}
 
 		/*after a pause they start to move again, now faster*/
-		
+
 		if(frame>14*60-30)
 		{
 			if(frame&1)
@@ -264,7 +290,7 @@ void cutscene_levels_clear(void)
 
 			princess_frame=game_frame_cnt&8?1:0;
 		}
-
+		
 		++game_frame_cnt;
 	}
 
@@ -279,30 +305,34 @@ void cutscene_level(void)
 {
 	static unsigned char i,bright,delay;
 	static unsigned int frame,ptr;
-	const char* const heightStr[]={"100 M  $"," 50 M  $"," 25 M  $"};
-	static int stack_y[3],stack_ty[3],stack_dy[3];
-	static unsigned char stack_frame[3],stack_jump[3],stack_delay[3];
+	const char* const heightStr[]={" 25 M  $"," 50 M  $"," 75 M  $","100 M  $"};
+	static int stack_y[4],stack_ty[4],stack_dy[4];
+	static unsigned char stack_frame[4],stack_jump[4],stack_delay[4];
 	static int y;
 
 	set_bright(0);
 	setup_hdma_gradient(-1);
 	oam_clear();
 
+	BG12NBA(0x00);	//patterns for layers 1 and 2 at $0000
+
 	setup_ingame_graphics();
 	clear_nametables();
 	set_background(-1);
 
-	for(i=0;i<3;++i) put_str(&nametable1[POS(5,7+i*6)],heightStr[i]);
+	for(ptr=0;ptr<32*32;++ptr) nametable2[ptr]=0x158|BG_PAL(1);
 
-	put_str(&nametable1[POS(5,25)],"HOW HIGH CAN YOU GET?");
+	for(i=0;i<game_level+1;++i) put_str(&nametable1[POS(5,20-i*5)],heightStr[i]);
+
+	put_str(&nametable1[POS(5,25)],"HOW HIGH CAN YOU GET ?");
 
 	update_nametables();
 	setup_palettes();
 	update_palette();
 
-	y=(40+48*2)<<6;
+	y=(64+40*2)<<6;
 
-	for(i=0;i<3;++i)
+	for(i=0;i<4;++i)
 	{
 		stack_y    [i]=-32<<6;
 		stack_ty   [i]=y;
@@ -311,13 +341,15 @@ void cutscene_level(void)
 		stack_jump [i]=0;
 		stack_delay[i]=i*25;
 
-		y-=(48<<6);
+		y-=(40<<6);
 	}
 
 	for(i=0;i<128;++i) oam_size(i<<2,1);
 
 	bright=0;
 	delay=25;
+
+	setup_hdma_gradient(7);
 
 	spc_volume(global_volume);
 
@@ -339,7 +371,7 @@ void cutscene_level(void)
 				continue;
 			}
 
-			if(stack_jump[i]<3)
+			if(stack_jump[i]<4)
 			{
 				stack_y[i]+=stack_dy[i];
 
@@ -378,11 +410,13 @@ void cutscene_level(void)
 	}
 
 	fade_screen(FALSE,TRUE);
+
+	BG12NBA(0x40);	//patterns for layers 1 at $0000, 2 at $4000
 }
 
 
 
-//update bending platform for the intro cutscene
+/* update bending platform for the intro cutscene */
 
 void cutscene_update_platform(unsigned int off,unsigned int ptr,unsigned char wdt,char dx)
 {
@@ -432,7 +466,7 @@ void cutscene_intro_show_ladders(void)
 	{
 		if(ladders_y[i]>=240) continue;
 
-		oam_spr1(ladders_x[i],ladders_y[i],BARREL_TILE+0x0e|BARREL_ATR,(127-i)<<2);
+		oam_spr1(ladders_x[i],ladders_y[i],ENEMY_TILE+0x0e|ENEMY_ATR,(127-i)<<2);
 
 		if(ladders_delay[i])
 		{
@@ -448,13 +482,13 @@ void cutscene_intro_show_ladders(void)
 
 //update princess coordinates according to the kong coordinates for the intro cutscene
 
-unsigned char cutscene_intro_princess_hold(unsigned char hold,unsigned char shift)
+unsigned char cutscene_intro_princess_hold(unsigned char off,unsigned char hold,unsigned char shift)
 {
 	static unsigned char princess_frame;
 
 	if(hold)
 	{
-		princess_x=kong_x+24-3;
+		princess_x=kong_x+off;
 		princess_y=kong_y-(game_frame_cnt&8?0:1);
 		princess_frame=0;
 	}
@@ -469,13 +503,16 @@ unsigned char cutscene_intro_princess_hold(unsigned char hold,unsigned char shif
 
 
 
-//show the intro cutscene
+/* show the intro cutscene */
 
 void cutscene_intro(void)
 {
 	static unsigned char i,j,y,bright,hold,jump_cnt,princess_frame;
 	static unsigned int frame,ptr;
 	static int ky,kdy;
+	const int xp_off=20;
+
+	game_flip=0;
 
 	set_bright(0);
 	setup_hdma_gradient(-1);
@@ -531,10 +568,11 @@ void cutscene_intro(void)
 			set_bright(bright);
 		}
 
-		kong_frame=game_frame_cnt&8?kongLargeSpriteClimb1:kongLargeSpriteClimb2;
+		kong_frame=game_frame_cnt&8?kongLargeSpriteClimb1R:kongLargeSpriteClimb2R;
+
 		--kong_y;
 
-		princess_frame=cutscene_intro_princess_hold(TRUE,TRUE);
+		princess_frame=cutscene_intro_princess_hold(xp_off,TRUE,TRUE);
 
 		game_show_kong(OAM_KONG,kong_x,kong_y);
 		game_show_princess(princess_frame);
@@ -563,7 +601,7 @@ void cutscene_intro(void)
 
 		if(kong_y<10) hold=FALSE;
 
-		princess_frame=cutscene_intro_princess_hold(hold,TRUE);
+		princess_frame=cutscene_intro_princess_hold(xp_off,hold,TRUE);
 
 		game_show_kong(OAM_KONG,kong_x,kong_y);
 		game_show_princess(princess_frame);
@@ -588,7 +626,7 @@ void cutscene_intro(void)
 	while(1)
 	{
 		nmi_wait();
-		copy_vram(0x0000,(unsigned char*)nametable1,32*32*2);
+		copy_to_vram(0x0000,(unsigned char*)nametable1,32*32*2);
 
 		if(bright<15)
 		{
@@ -680,18 +718,60 @@ void cutscene_intro(void)
 }
 
 
-//show the level 1 and 2 clear cutscene
+/* show the level clear cutscene */
 
 void cutscene_next_level(void)
 {
-	static unsigned char i,princess_frame,hold;
-	static int ky,kdy,kong_oy;
-	const unsigned char heart_x=120,heart_y=16;
+	static unsigned char i,t1,t2,princess_frame,hold,side;
+	static int ky,kdy,kong_tx,kong_oy,x_off,xp_off;
+	static unsigned char heart_x,heart_y;
+
+	/* move kong to the center in the second level */
+
+	if(game_level==1)
+	{
+		if(!game_flip)
+		{
+			t1=8;
+			t2=4;
+		}
+		else
+		{
+			t1=4;
+			t2=8;
+		}
+
+		if(kong_x<112)
+		{
+			for(i=0;i<26;++i) nametable1[POS(3,7)+i]=(nametable1[POS(3,7)+i]&~0xc)|t1;
+		}
+		else
+		{
+			for(i=0;i<26;++i) nametable1[POS(3,7)+i]=(nametable1[POS(3,7)+i]&~0xc)|t2;
+		}
+
+		while(kong_x!=112)
+		{
+			game_wait_and_update_nametables();
+			game_update_vram_animation();
+
+			if(game_frame_cnt&1)
+			{
+				if(kong_x<112) ++kong_x; else --kong_x;
+			}
+
+			game_show_kong(OAM_KONG,kong_x,kong_y);
+
+			++game_frame_cnt;
+		}
+	}
 
 	/* heart appears */
 
-	enemy_clear();
-	enemy_process(0);
+	sfx_play(SFX_CHN,SFX_HEART,heart_x);
+
+	heart_x=princess_x<player_x?player_x-20:player_x+20;
+	heart_y=player_y;
 
 	kong_frame=kongLargeSpriteFace1;
 	game_show_kong(OAM_KONG,kong_x,kong_y);
@@ -706,14 +786,30 @@ void cutscene_next_level(void)
 
 	/* kong jumps from his position to the ladder, grabbing the princess in the process */
 
-	kong_frame=kongLargeSpriteClimb1;
+	side=game_flip;
 
+	if(game_level==1) side^=1;
+
+	if(!side)
+	{
+		kong_frame=kongLargeSpriteClimb1R;
+		x_off=4;
+		xp_off=24;
+	}
+	else
+	{
+		kong_frame=kongLargeSpriteClimb1L;
+		x_off=-4;
+		xp_off=-8;
+	}
+
+	kong_tx=!game_flip?76:256-76-32;
 	kong_oy=kong_y+1;
 	ky=kong_y<<4;
 	kdy=-1<<4;
 	hold=FALSE;
 
-	while(kong_x<78)
+	while(kong_x!=kong_tx)
 	{
 		nmi_wait();
 
@@ -721,12 +817,21 @@ void cutscene_next_level(void)
 		++kdy;
 		kong_y=ky>>4;
 		if(kong_y>kong_oy) kong_y=kong_oy;
-		++kong_x;
-		if(kong_x>=60) hold=TRUE;
 
-		princess_frame=cutscene_intro_princess_hold(hold,FALSE);
+		if(kong_x<kong_tx) ++kong_x; else --kong_x;
 
-		game_show_kong(OAM_KONG,kong_x,kong_y);
+		if(x_off>0)
+		{
+			if((!game_flip&&kong_x>=56)||(game_flip&&kong_x<256-56-32)) hold=TRUE;
+		}
+		else
+		{
+			if((!game_flip&&kong_x<90)||(game_flip&&kong_x>=256-90-32)) hold=TRUE;
+		}
+
+		princess_frame=cutscene_intro_princess_hold(xp_off,hold,FALSE);
+
+		game_show_kong(OAM_KONG,kong_x+x_off,kong_y);
 		game_show_princess(princess_frame);
 
 		++game_frame_cnt;
@@ -740,10 +845,18 @@ void cutscene_next_level(void)
 
 		if(game_frame_cnt&1) --kong_y;
 
-		kong_frame=game_frame_cnt&8?kongLargeSpriteClimb1:kongLargeSpriteClimb2;
-		princess_frame=cutscene_intro_princess_hold(TRUE,FALSE);
+		if(side)
+		{
+			kong_frame=(game_frame_cnt&8)?kongLargeSpriteClimb1L:kongLargeSpriteClimb2L;
+		}
+		else
+		{
+			kong_frame=(game_frame_cnt&8)?kongLargeSpriteClimb1R:kongLargeSpriteClimb2R;
+		}
 
-		game_show_kong(OAM_KONG,kong_x,kong_y);
+		princess_frame=cutscene_intro_princess_hold(xp_off,TRUE,FALSE);
+
+		game_show_kong(OAM_KONG,kong_x+x_off,kong_y);
 		game_show_princess(princess_frame);
 
 		++game_frame_cnt;
