@@ -16,7 +16,7 @@ limitations under the License.
 
 //#define SOUND_DISABLE	//sound loading is rather slow, it could be disabled to make tests faster
 
-const char versionStr[]="V2.0";
+const char versionStr[]="V2.01";
 
 #include "sneslib.h"
 
@@ -198,7 +198,7 @@ const unsigned char tileAttribute[128][8]={
 #define ENEMY_ATR		(SPR_PAL(4)|SPR_PRI(2))
 #define GAMEOVER_ATR	(SPR_PAL(7)|SPR_PRI(3))
 
-#define TEXT_ATR		(0x2100|BG_PAL(0)|BG_PRI)
+#define TEXT_ATR		(0x0100|BG_PAL(0)|BG_PRI)
 
 //OAM offsets for objects
 

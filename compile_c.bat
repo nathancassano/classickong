@@ -1,5 +1,7 @@
 @echo off
 
+set relname="Classic Kong Complete (U).smc"
+
 rem convert C code only, without recompiling resources
 
 REM C -> ASM / S
@@ -16,7 +18,7 @@ REM ASM -> OBJ
 ..\bin\wla-65816.exe -io game.s game.obj
 
 REM OBJ -> SMC
-..\bin\wlalink.exe -dvSo game.obj game.smc
+..\bin\wlalink.exe -dvSo game.obj %relname%
 
 pause
 
@@ -28,5 +30,5 @@ del *.sym
 del stderr.txt
 del stdout.txt
 
-..\zsnesw151\zsnesw.exe game.smc
-rem game.smc
+..\zsnesw151\zsnesw.exe %relname%
+rem %relname%

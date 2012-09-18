@@ -544,7 +544,7 @@ unsigned char enemy_process(unsigned char clear)
 									val=64;
 								}
 
-								if((rand()&255)<val)
+								if((rand()&255)<val&&oy>40)/*don't take the ladders at top of the screen*/
 								{
 									enemy_ladder[i]=DIR_UP;
 									break;
